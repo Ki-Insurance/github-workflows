@@ -139,8 +139,8 @@ jobs:
         run: |
           for name in $(jq -r '.[].name'); do
             oldName=$(echo '${{ inputs.images }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newName')
-            newName=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r ''.[] | select(.name == $name) | .newName')
-            newTag=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r ''.[] | select(.name == $name) | .newTag')
+            newName=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newName')
+            newTag=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newTag')
 
             if [[ "$newName" != "$oldName" ]]; then
               echo "Now pushing $oldName:$newTag to $newName:$newTag"
