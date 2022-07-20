@@ -61,10 +61,11 @@ on:
         required: false
 jobs:
   update-image:
-    name: Update ${{ matrix.name }} image to ${{ matrix.newTag }}
+    name: Update ${{ matrix.name }} image
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON('\{\"include\":inputs.images\}') }}
+      matrix:
+        name: ${{ fromJSON(inputs.images).*.name }}
       max-parallel: 1
     steps:
       - uses: actions/checkout@v2
@@ -74,10 +75,13 @@ jobs:
           git switch "${{ inputs.branch }}" 2>/dev/null || git switch -c "${{ inputs.branch }}"
           git push origin "${{ inputs.branch }}"
       - uses: imranismail/setup-kustomize@v1
-      - name: Set newTag ${{ matrix.name }} to ${{matrix.newTag}}
+      - name: Set newTag for ${{ matrix.name }}
+        id: set-tag
         run: |
           cd "${{ inputs.overlay }}"
-          kustomize edit set image '${{ matrix.name }}=*:${{ matrix.newTag }}'
+          newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "${{ matrix.name }}" '.[] | select(.name == $name) | .newTag')
+          kustomize edit set image "${{ matrix.name }}=*:$newTag"
+          echo "::set-output tag=$newTag"
       - name: kustomize build
         run: kustomize build ${{ inputs.overlay }}
       - name: commit
@@ -87,7 +91,7 @@ jobs:
           add: ${{ inputs.overlay }}
           author_name: ${{ inputs.git_author_name }}
           author_email: ${{ inputs.git_author_email }}
-          message: "Set image for ${{ matrix.name }} in ${{ inputs.overlay }} to ${{ matrix.newTag }}"
+          message: "Set image for ${{ matrix.name }} in ${{ inputs.overlay }} to ${{ steps.set-tag.outputs.tag }}"
           push: true
   create-pull-request:
     name: Create a pull request
