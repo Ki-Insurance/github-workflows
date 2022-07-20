@@ -81,7 +81,7 @@ jobs:
           cd "${{ inputs.overlay }}"
           newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "${{ matrix.name }}" '.[] | select(.name == $name) | .newTag')
           kustomize edit set image "${{ matrix.name }}=*:$newTag"
-          echo "::set-output tag=$newTag"
+          echo "::set-output name=tag::$newTag"
       - name: kustomize build
         run: kustomize build ${{ inputs.overlay }}
       - name: commit
