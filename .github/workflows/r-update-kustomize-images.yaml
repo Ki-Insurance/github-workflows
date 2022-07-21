@@ -1,0 +1,159 @@
+on:
+  workflow_call:
+    inputs:
+      overlay:
+        description: 'Dst kustomization overlay to update'
+        required: true
+        type: string
+      images:
+        description: 'JSON object of `images` from src kustomize overlay'
+        required: true
+        type: 'string'
+      create_pr:
+        description: 'Create a pull request? defaults to true'
+        type: boolean
+        required: false
+        default: true
+      #Must be specified if create_pr=true
+      pull_request_assignees:
+        description: 'Pull request assignees'
+        type: string
+        required: false
+        default: ''
+      pull_request_reviewers:
+        description: 'Pull request reviewers'
+        type: string
+        required: false
+        default: ''
+      git_author_name:
+        description: 'Author of the commit'
+        type: string
+      git_author_email:
+        description: 'Email of the author'
+        type: string
+      branch:
+        description: 'Branch to checkout if creating a PR; defaults to main'
+        type: string
+        required: false
+        default: ${{ github.event.repository.default_branch }}
+      base:
+        description: 'Base branch of pull request; defaults to main'
+        type: string
+        required: false
+        default: ${{ github.event.repository.default_branch }}
+      copy_docker_image:
+        description: 'Should images be pushed to registry in `newName` from old `newName`?'
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      src_image_docker_username:
+        description: 'src image docker username'
+        required: false
+      src_image_docker_password:
+        description: 'src image docker password'
+        required: false
+      dst_image_docker_username:
+        description: 'dst image docker username'
+        required: false
+      dst_image_docker_password:
+        description: 'dst image docker password'
+        required: false
+jobs:
+  update-image:
+    name: Update ${{ matrix.name }} image
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        name: ${{ fromJSON(inputs.images).*.name }}
+      max-parallel: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: create or switch branch
+        if: inputs.branch != inputs.base
+        run: |
+          git switch "${{ inputs.branch }}" 2>/dev/null || git switch -c "${{ inputs.branch }}"
+          git push origin "${{ inputs.branch }}"
+      - uses: imranismail/setup-kustomize@v1
+      - name: Set newTag for ${{ matrix.name }}
+        id: set-tag
+        run: |
+          cd "${{ inputs.overlay }}"
+          newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "${{ matrix.name }}" '.[] | select(.name == $name) | .newTag')
+          kustomize edit set image "${{ matrix.name }}=*:$newTag"
+          echo "::set-output name=tag::$newTag"
+      - name: kustomize build
+        run: kustomize build ${{ inputs.overlay }}
+      - name: commit
+        id: commit
+        uses: EndBug/add-and-commit@v7
+        with:
+          add: ${{ inputs.overlay }}
+          author_name: ${{ inputs.git_author_name }}
+          author_email: ${{ inputs.git_author_email }}
+          message: "Set image for ${{ matrix.name }} in ${{ inputs.overlay }} to ${{ steps.set-tag.outputs.tag }}"
+          push: true
+  create-pull-request:
+    name: Create a pull request
+    runs-on: ubuntu-latest
+    needs: [ update-image ]
+    if: inputs.create_pr
+    steps:
+      - name: Create PR
+        id: create-pr
+        uses: peter-evans/create-pull-request@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: ${{ inputs.base }}
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          signoff: false
+          branch: ${{ inputs.branch }}
+          delete-branch: true
+          title: '[CI] Update Images in ${{ inputs.overlay }}'
+          body: |
+            *Automated PR*
+
+            Updates ${{ inputs.overlay }} with newTag from images
+            ```
+            ${{ inputs.images }}
+            ```
+          labels: |
+            automated
+            infra
+          assignees: ${{ inputs.pull_request_assignees }}
+          reviewers: ${{ inputs.pull_request_reviewers }}
+          team-reviewers: |
+            ${{ inputs.pull_request_reviewers }}
+          draft: false
+  promote-images:
+    name: Push image from src to dst
+    runs-on: ubuntu-latest
+    if: inputs.copy_docker_image
+    needs: [ update-image ]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.branch }}
+      - name: Get updated images from overlay
+        uses: mikefarah/yq@v4.26.1
+        id: images
+        with:
+          cmd: yq -o json '.images' ${{ inputs.overlay }}/kustomization.yaml
+      - name: Promote images
+        run: |
+          for name in $(echo '${{ steps.images.outputs.result }}' | jq -r '.[].name'); do
+            oldName=$(echo '${{ inputs.images }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newName')
+            newName=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newName')
+            newTag=$(echo '${{ steps.images.outputs.result }}' | jq --arg name "$name" -r '.[] | select(.name == $name) | .newTag')
+
+            if [[ "$newName" != "$oldName" ]]; then
+              echo "Now pushing $oldName:$newTag to $newName:$newTag"
+              docker login -u '${{ secrets.src_image_docker_username }}' -p '${{ secrets.src_image_docker_password }}' "$oldName"
+              docker pull "$oldName:$newTag"
+              docker tag "$oldName:$newTag" "$newName:$newTag"
+              docker login -u '${{ secrets.dst_image_docker_username }}' -p '${{ secrets.dst_image_docker_password }}' "$newName"
+              docker push "$newName:$newTag"
+            else
+              echo "$newName == $oldName - skipping..."
+            fi
+          done
