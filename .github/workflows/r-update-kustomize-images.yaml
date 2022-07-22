@@ -68,7 +68,8 @@ jobs:
         id: branch-exists
         if: inputs.branch != inputs.base
         run: |
-          git rev-parse --quiet --verify "refs/heads/${{ inputs.branch }}" >/dev/null && exists=true || exists=false
+          git ls-remote --exit-code origin "${{ inputs.branch }}" && exists=true || exists=false
+          echo "Remote branch ${{ inputs.branch }} exists? $exists"
           echo "::set-output name=outcome::$exists"
       - name: Maybe create branch ${{ inputs.branch }}
         if: ${{ inputs.branch != inputs.base && !steps.branch-exists.outputs.outcome }}
