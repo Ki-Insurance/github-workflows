@@ -15,6 +15,7 @@ on:
         required: false
         default: true
       #Must be specified if create_pr=true
+      #Teams/collaborators listed here must have at least read access to the repository
       pull_request_reviewers:
         description: 'Comma separated list of pull request reviewers; eg monalisa,hubot'
         type: string
@@ -54,6 +55,9 @@ on:
       dst_image_docker_password:
         description: 'dst image docker password'
         required: false
+      github_token:
+        description: 'Non default github token to use for commits'
+        required: false
 # Ensure that an overlay can only be committed to one at a time
 concurrency: ${{ inputs.overlay }}
 jobs:
@@ -79,6 +83,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           ref: "${{ inputs.branch }}"
+          token: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
       - uses: imranismail/setup-kustomize@v1
       - name: Update "${{ inputs.overlay }}"
         run: |
@@ -97,7 +102,7 @@ jobs:
       - name: Maybe create pull-request
         if: inputs.create_pr && inputs.branch != inputs.base
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.github_token || secrets.GITHUB_TOKEN }}
         run: |
           echo -e '*Automated PR*\n\nUpdates ${{ inputs.overlay }} with newTag from images\n```\n${{ inputs.images }}\n```\n' > /tmp/body
           gh pr create --title '[CI] Promote images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
