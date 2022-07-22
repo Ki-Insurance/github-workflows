@@ -76,7 +76,7 @@ jobs:
           git rev-parse --quiet --verify "refs/heads/${{ inputs.branch }}" >/dev/null && exists=true || exists=false
           echo "::set-output name=outcome::$exists"
       - name: Create branch if not exists
-        if: ${{ !steps.branch-exists.outputs.outcome }}
+        if: ${{ inputs.branch != inputs.base && !steps.branch-exists.outputs.outcome }}
         run: |
           git checkout -b "${{ inputs.branch }}"
           git push origin "${{ inputs.branch }}"
