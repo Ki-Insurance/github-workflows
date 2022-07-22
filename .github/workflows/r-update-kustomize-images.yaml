@@ -59,46 +59,52 @@ on:
       dst_image_docker_password:
         description: 'dst image docker password'
         required: false
+# Ensure that an overlay can only be committed to one at a time
+concurrency: ${{ inputs.overlay }}
 jobs:
   update-image:
-    name: Update ${{ matrix.name }} image
+    name: Update images for ${{ inputs.overlay }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        name: ${{ fromJSON(inputs.images).*.name }}
-      max-parallel: 1
     steps:
       - uses: actions/checkout@v2
-      - name: create or switch branch
+        with:
+          fetch-depth: 0
+      - name: Check if branch exists
+        id: branch-exists
         if: inputs.branch != inputs.base
         run: |
-          git switch "${{ inputs.branch }}" 2>/dev/null || git switch -c "${{ inputs.branch }}"
-          git push origin "${{ inputs.branch }}"
-      - uses: imranismail/setup-kustomize@v1
-      - name: Set newTag for ${{ matrix.name }}
-        id: set-tag
+          git rev-parse --quiet --verify "refs/heads/${{ inputs.branch }}" >/dev/null && exists=true || exists=false
+          echo "::set-output name=outcome::$exists"
+      - name: Create branch if not exists
+        if: ${{ !steps.branch-exists.outputs.outcome }}
         run: |
+          git checkout -b "${{ inputs.branch }}"
+          git push origin "${{ inputs.branch }}"
+      - uses: actions/checkout@v2
+        with:
+          ref: "${{ inputs.branch }}"
+      - uses: imranismail/setup-kustomize@v1
+      - name: Update "${{ inputs.overlay }}"
+        run: |
+          git config user.name "${{ inputs.git_author_name }}"
+          git config user.email "${{ inputs.git_author_email }}"
           cd "${{ inputs.overlay }}"
-          newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "${{ matrix.name }}" '.[] | select(.name == $name) | .newTag')
-          kustomize edit set image "${{ matrix.name }}=*:$newTag"
-          echo "::set-output name=tag::$newTag"
+          for name in $(echo '${{ inputs.images }}' | jq -r '.[].name'); do
+            newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "$name" '.[] | select(.name == $name) | .newTag')
+            kustomize edit set image "$name=*:$newTag"
+            git add "${{ inputs.overlay }}"
+            git commit -m "Set image $name in ${{ inputs.overlay }} to $newTag"
+          done
+          git push origin "${{ inputs.branch }}"
       - name: kustomize build
         run: kustomize build ${{ inputs.overlay }}
-      - name: commit
-        id: commit
-        uses: EndBug/add-and-commit@v7
-        with:
-          add: ${{ inputs.overlay }}
-          author_name: ${{ inputs.git_author_name }}
-          author_email: ${{ inputs.git_author_email }}
-          message: "Set image for ${{ matrix.name }} in ${{ inputs.overlay }} to ${{ steps.set-tag.outputs.tag }}"
-          push: true
   create-pull-request:
     name: Create a pull request
     runs-on: ubuntu-latest
     needs: [ update-image ]
     if: inputs.create_pr
     steps:
+      - uses: actions/checkout@v2
       - name: Create PR
         id: create-pr
         uses: peter-evans/create-pull-request@v3
