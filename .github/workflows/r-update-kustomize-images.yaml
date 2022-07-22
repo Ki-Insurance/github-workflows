@@ -92,7 +92,7 @@ jobs:
           for name in $(echo '${{ inputs.images }}' | jq -r '.[].name'); do
             newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "$name" '.[] | select(.name == $name) | .newTag')
             kustomize edit set image "$name=*:$newTag"
-            git add "${{ inputs.overlay }}"
+            git add .
             git commit -m "Set image $name in ${{ inputs.overlay }} to $newTag"
           done
           git push origin "${{ inputs.branch }}"
