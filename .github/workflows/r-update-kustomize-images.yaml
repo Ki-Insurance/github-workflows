@@ -72,7 +72,7 @@ jobs:
           echo "Create branch '${{ inputs.branch }}'? $create"
           echo "::set-output name=result::$create"
       - name: Maybe create branch ${{ inputs.branch }}
-        if: ${{ inputs.branch != inputs.base && steps.should-create-branch.outputs.result }}
+        if: ${{ inputs.branch != inputs.base && steps.should-create-branch.outputs.result == 'true' }}
         run: |
           git checkout -b "${{ inputs.branch }}"
           git push origin "${{ inputs.branch }}"
