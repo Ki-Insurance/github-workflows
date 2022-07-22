@@ -65,14 +65,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Maybe check if branch ${{ inputs.branch }} exists
-        id: branch-exists
+        id: should-create-branch
         if: inputs.branch != inputs.base
         run: |
-          git ls-remote --exit-code origin "${{ inputs.branch }}" && exists=true || exists=false
-          echo "Remote branch ${{ inputs.branch }} exists? $exists"
-          echo "::set-output name=outcome::$exists"
+          git ls-remote --exit-code origin "${{ inputs.branch }}" && create=false || create=true
+          echo "Create branch '${{ inputs.branch }}'? $create"
+          echo "::set-output name=result::$create"
       - name: Maybe create branch ${{ inputs.branch }}
-        if: ${{ inputs.branch != inputs.base && !steps.branch-exists.outputs.outcome }}
+        if: ${{ inputs.branch != inputs.base && steps.should-create-branch.outputs.result }}
         run: |
           git checkout -b "${{ inputs.branch }}"
           git push origin "${{ inputs.branch }}"
