@@ -27,12 +27,12 @@ on:
         description: 'Email of author to assign to commits'
         type: string
       branch:
-        description: 'Branch to checkout if creating a PR; defaults to ${{ github.event.repository.default_branch }}'
+        description: 'Branch to checkout if creating a PR; defaults to github.event.repository.default_branch'
         type: string
         required: false
         default: ${{ github.event.repository.default_branch }}
       base:
-        description: 'Base branch of pull request; defaults to ${{ github.event.repository.default_branch }}'
+        description: 'Base branch of pull request; defaults to github.event.repository.default_branch'
         type: string
         required: false
         default: ${{ github.event.repository.default_branch }}
