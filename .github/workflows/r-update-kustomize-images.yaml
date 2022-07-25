@@ -104,7 +104,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
         run: |
-          echo -e '*Automated PR*\n\nUpdates ${{ inputs.overlay }} with newTag from images\n```\n${{ inputs.images }}\n```\n' > /tmp/body
+          images=$(echo '${{ inputs.images }}' | jq .)
+          echo -e "*Automated PR*\n\nUpdates ${{ inputs.overlay }} with newTag from images\n\`\`\`json\n$images\n\`\`\`\n" > /tmp/body
           gh pr create --title '[CI] Promote images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
               --label "automated" --label "infra" --reviewer "${{ inputs.pull_request_reviewers }}" \
               --base "${{ inputs.base }}" || gh pr edit --body-file="/tmp/body"
