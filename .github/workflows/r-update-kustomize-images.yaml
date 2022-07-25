@@ -94,7 +94,7 @@ jobs:
             newTag=$(echo '${{ inputs.images }}' | jq -r --arg name "$name" '.[] | select(.name == $name) | .newTag')
             kustomize edit set image "$name=*:$newTag"
             git add .
-            git commit -m "Set image $name in ${{ inputs.overlay }} to $newTag"
+            git commit -m "Set image $name in ${{ inputs.overlay }} to $newTag" || echo "No changes to $name image to commit"
           done
           git push origin "${{ inputs.branch }}"
       - name: kustomize build
