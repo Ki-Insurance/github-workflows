@@ -1,0 +1,161 @@
+on:
+  workflow_call:
+    inputs:
+      overlays_root:
+        description: 'Root overlay directory'
+        required: true
+        type: string
+      enable_flux_diff:
+        description: "Enable flux diff?"
+        required: false
+        type: boolean
+        default: true
+      gke_config_yaml_file:
+        description: "GKE config yaml file relative to overlay (cluster_name, location, project_id)"
+        required: false
+        type: string
+        default: ".gke.yaml"
+      gh_linter_kubeval_options:
+        description: 'Override KUBERNETES_KUBEVAL_OPTIONS on github super linter'
+        required: false
+        type: string
+        default: '--ignore-missing-schemas'
+      gh_linter_validate_all_codebase:
+        description: 'Override VALIDATE_ALL_CODEBASE on github super linter'
+        required: false
+        type: boolean
+        default: false
+      gh_linter_filter_regex_include:
+        description: 'Override FILTER_REGEX_INCLUDE on github super linter'
+        required: false
+        type: string
+        default: '.*'
+      gh_linter_default_branch:
+        description: 'Override default branch for super linter'
+        required: false
+        type: string
+        default: ${{ github.event.repository.default_branch }}
+    secrets:
+      gh_linter_github_token:
+        description: 'Override GITHUB_TOKEN used for super linter'
+        required: false
+      gcp_workload_identity_provider:
+        description: 'Workload identity provider used to authenticate to GCP; EG projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
+        required: false
+      gcp_service_account:
+        description: 'Service account used to authenticate to GCP; required if gcp_workload_identity_provider is set'
+        required: false
+      gcp_credentials_json:
+        description: 'Service account JSON key used to authenticate to GCP (Recommended to use workload identity instead)'
+        required: false
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Lint Code Base
+        uses: github/super-linter@v4.9.0
+        env:
+          VALIDATE_ALL_CODEBASE: ${{ inputs.gh_linter_validate_all_codebase }}
+          FILTER_REGEX_INCLUDE: ${{ inputs.gh_linter_filter_regex_include }}
+          DEFAULT_BRANCH: ${{ inputs.gh_linter_default_branch }}
+          GITHUB_TOKEN: ${{ secrets.gh_linter_github_token || secrets.GITHUB_TOKEN }}
+          KUBERNETES_KUBEVAL_OPTIONS: ${{ inputs.gh_linter_kubeval_options }}
+  overlays:
+    name: Compute overlays
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.result }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Get all subfolder overlays
+        id: matrix
+        run: echo "::set-output name=result::$(ls -d -- ${{inputs.overlays_root}}/*/)"
+  k8s-checks:
+    name: K8s Checks
+    runs-on: ubuntu-latest
+    needs: overlays
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.overlays.outputs.matrix)}}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Get all dependent resources
+        id: dependent-files
+        run: echo "::set-output name=result::$(for r in $(yq '.resources[]' ${{ matrix.plans }}/kustomization.yaml); do realpath --relative-to . ${{matrix.plans}}/$r; done)"
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v24
+        with:
+          files: |
+            ${{ matrix.plans }}
+            ${{ steps.dependent-files.outputs.result }}
+      - uses: imranismail/setup-kustomize@v1
+        if: steps.changed-files.outputs.any_changed == 'true'
+      - name: kustomize build ${{ matrix.plans }}
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: kustomize build ${{ matrix.plans }}
+      - name: Setup yq
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        uses: mikefarah/yq@v4.25.3
+      - name: Authenticate to Google Cloud
+        id: gcp-auth
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: ${{ secrets.gcp_workload_identity_provider || null }}
+          service_account: ${{ secrets.gcp_service_account || null }}
+          credentials_json: ${{ secrets.gcp_credentials_json || null }}
+      - name: Parse gke config
+        id: gke
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "::set-output name=cluster_name::$(yq .cluster_name ${{ matrix.plans }}/${{ inputs.gke_config_yaml_file }})"
+          echo "::set-output name=location::$(yq .location ${{ matrix.plans }}/${{ inputs.gke_config_yaml_file }})"
+          echo "::set-output name=project_id::$(yq .project_id ${{ matrix.plans }}/${{ inputs.gke_config_yaml_file }})"
+      - name: Setup kubectl
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        uses: 'google-github-actions/get-gke-credentials@v0'
+        with:
+          cluster_name: ${{ steps.gke.outputs.cluster_name }}
+          location: ${{ steps.gke.outputs.location }}
+          project_id: ${{ steps.gke.outputs.project_id }}
+      - name: Setup Flux CLI
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        uses: fluxcd/flux2/action@main
+      - name: flux diff kustomize ${{ matrix.plans }}
+        id: flux-diff
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          NAMESPACE=$(kustomize build ${{ matrix.plans }} | yq -N '. | select(.kind == "Deployment") | .metadata.namespace'|sort -u)
+          flux diff kustomization --namespace $NAMESPACE $NAMESPACE --path ${{ matrix.plans }} 2>&1 | tee diff-msg
+          echo "::set-output name=exit-code::${PIPESTATUS[0]}"
+        continue-on-error: true
+      - id: get-comment-body
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true' && failure() && steps.flux-diff.conclusion == 'failure'
+        run: |
+          body="$(cat diff-msg)"
+          body="${body//'%'/'%25'}"
+          body="${body//$'\n'/'%0A'}"
+          body="${body//$'\r'/'%0D'}"
+          echo "::set-output name=body::$body"
+      - name: Comment on diff
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true' && failure() && steps.flux-diff.conclusion == 'failure'
+        uses: thollander/actions-comment-pull-request@v1
+        with:
+          message: |
+            Flux diff found against cluster for **${{ matrix.plans }}**:
+            ```
+            ${{ steps.get-comment-body.outputs.body }}
+            ```
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check on failures
+        if: inputs.enable_flux_diff == 'true' && steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          if [ "${{ steps.flux-diff.outputs.exit-code }}" -gt "1" ];
+          then
+            echo "error on step flux diff kustomize ${{ matrix.plans }} above"
+            exit 1
+          fi
