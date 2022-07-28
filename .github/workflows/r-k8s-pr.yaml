@@ -101,11 +101,11 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         run: kustomize build ${{ matrix.overlay }}
       - name: Setup yq
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: mikefarah/yq@v4.25.3
       - name: Authenticate to Google Cloud
         id: gcp-auth
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: 'google-github-actions/auth@v0'
         with:
           workload_identity_provider: ${{ secrets.gcp_workload_identity_provider || null }}
@@ -113,31 +113,31 @@ jobs:
           credentials_json: ${{ secrets.gcp_credentials_json || null }}
       - name: Parse gke config
         id: gke
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         run: |
           echo "::set-output name=cluster_name::$(yq .cluster_name ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
           echo "::set-output name=location::$(yq .location ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
           echo "::set-output name=project_id::$(yq .project_id ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
       - name: Setup kubectl
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: 'google-github-actions/get-gke-credentials@v0'
         with:
           cluster_name: ${{ steps.gke.outputs.cluster_name }}
           location: ${{ steps.gke.outputs.location }}
           project_id: ${{ steps.gke.outputs.project_id }}
       - name: Setup Flux CLI
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: fluxcd/flux2/action@main
       - name: flux diff kustomize ${{ matrix.overlay }}
         id: flux-diff
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         run: |
           NAMESPACE=$(kustomize build ${{ matrix.overlay }} | yq -N '. | select(.kind == "Deployment") | .metadata.namespace'|sort -u)
           flux diff kustomization --namespace $NAMESPACE $NAMESPACE --path ${{ matrix.overlay }} 2>&1 | tee diff-msg
           echo "::set-output name=exit-code::${PIPESTATUS[0]}"
         continue-on-error: true
       - id: get-comment-body
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
         run: |
           body="$(cat diff-msg)"
           body="${body//'%'/'%25'}"
@@ -145,7 +145,7 @@ jobs:
           body="${body//$'\r'/'%0D'}"
           echo "::set-output name=body::$body"
       - name: Comment on diff
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
         uses: thollander/actions-comment-pull-request@v1
         with:
           message: |
@@ -155,7 +155,7 @@ jobs:
             ```
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Check on failures
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' }}
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         run: |
           if [ "${{ steps.flux-diff.outputs.exit-code }}" -gt "1" ];
           then
