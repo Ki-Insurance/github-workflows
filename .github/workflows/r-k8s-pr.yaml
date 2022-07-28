@@ -137,7 +137,7 @@ jobs:
           echo "::set-output name=exit-code::${PIPESTATUS[0]}"
         continue-on-error: true
       - id: get-comment-body
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && failure() && steps.flux-diff.conclusion == 'failure' }}
+        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
         run: |
           body="$(cat diff-msg)"
           body="${body//'%'/'%25'}"
@@ -145,7 +145,7 @@ jobs:
           body="${body//$'\r'/'%0D'}"
           echo "::set-output name=body::$body"
       - name: Comment on diff
-        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && failure() && steps.flux-diff.conclusion == 'failure' }}
+        if: ${{ inputs.enable_flux_diff == true && steps.changed-files.outputs.any_changed == 'true' && steps.flux-diff.outcome == 'failure' }}
         uses: thollander/actions-comment-pull-request@v1
         with:
           message: |
