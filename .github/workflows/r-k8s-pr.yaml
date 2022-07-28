@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Lint Code Base
-        uses: github/super-linter@v4.9.0
+        uses: github/super-linter@slim-v4.9.0
         env:
           VALIDATE_ALL_CODEBASE: ${{ inputs.gh_linter_validate_all_codebase }}
           FILTER_REGEX_INCLUDE: ${{ inputs.gh_linter_filter_regex_include }}
