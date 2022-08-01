@@ -1,0 +1,23 @@
+name: Kustomize development overlay update
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-pr:
+    uses: Ki-Insurance/github-workflows/.github/workflows/r-update-kustomize-images.yaml@v0.0.1
+    with:
+      overlay: k8s/environments/development
+      images: '[{"name":"my-app", "newName":"old-docker-image-location", "newTag": "1.4.2"}]'
+      branch: 'update-overlay'
+      git_author_name: "<author name>"
+      git_author_email: "<author email>"
+      pull_request_reviewers: "<org>/<team> or <user>"
+      create_pr: true
+      copy_docker_images: true
+    secrets:
+      override_github_token: ${{ secrets.OVERRIDE_GITHUB_TOKEN }} # Required for creating a PR and referencing a team/user, will fail with default runner token
+      src_image_docker_username: ${{ secrets.SRC_DOCKER_USERNAME }} # Username of images.newName (old-docker-image-location) docker registry
+      src_image_docker_password: ${{ secrets.SRC_DOCKER_PASSWORD }} # Password of images.newName (old-docker-image-location) docker registry
+      dst_image_docker_username: ${{ secrets.DST_DOCKER_USERNAME }} # Username of k8s/environments/development/kustomization.yaml images.newName docker registry
+      dst_image_docker_password: ${{ secrets.DST_DOCKER_PASSWORD }} # Password of k8s/environments/development/kustomization.yaml images.newName docker registry
