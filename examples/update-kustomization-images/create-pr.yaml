@@ -1,0 +1,18 @@
+name: Kustomize development overlay update
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-pr:
+    uses: Ki-Insurance/github-workflows/.github/workflows/r-update-kustomize-images.yaml@v0.0.1
+    with:
+      overlay: k8s/environments/development
+      images: '[{"name":"my-app", "newTag": "1.4.2"}]'
+      branch: 'update-overlay'
+      git_author_name: "<author name>"
+      git_author_email: "<author email>"
+      pull_request_reviewers: "<org>/<team> or <user>"
+      create_pr: true
+    secrets:
+      override_github_token: ${{ secrets.A_DIFFERENT_PAT }} #Required for creating a PR and referencing a team/user, will fail with default runner token

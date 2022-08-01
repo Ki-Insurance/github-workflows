@@ -1,0 +1,15 @@
+name: K8S Pull-Request checks
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - k8s/environments/**
+
+jobs:
+  k8s:
+    uses: Ki-Insurance/github-workflows/.github/workflows/r-k8s-pr.yaml@v0.0.1
+    with:
+      overlays_root: 'k8s/environments'
+      gh_linter_filter_regex_include: '.*k8s/.*'
+      enable_flux_diff: false
