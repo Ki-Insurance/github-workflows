@@ -58,12 +58,18 @@ on:
       override_github_token:
         description: 'Non default github token to use for commits'
         required: false
+    outputs:
+      pr_number:
+        description: "PR number if created"
+        value: ${{ jobs.update-image.outputs.pr_number }}
 # Ensure that an overlay can only be committed to one at a time
 concurrency: ${{ inputs.overlay }}
 jobs:
   update-image:
     name: Update images for ${{ inputs.overlay }}
     runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.create-pr.outputs.pr_number }}
     steps:
       - uses: actions/checkout@v2
         with:
@@ -101,6 +107,7 @@ jobs:
         run: kustomize build ${{ inputs.overlay }}
       - name: Maybe create pull-request
         if: inputs.create_pr && inputs.branch != inputs.base
+        id: create-pr
         env:
           GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
         run: |
@@ -109,6 +116,7 @@ jobs:
           gh pr create --title '[CI] Promote images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
               --label "automated" --label "infra" --reviewer "${{ inputs.pull_request_reviewers }}" \
               --base "${{ inputs.base }}" || gh pr edit --body-file="/tmp/body"
+          echo "::set-output name=pr_number::$(gh pr view --json number | jq '.number')"
   promote-images:
     name: Push image from src to dst
     runs-on: ubuntu-latest
