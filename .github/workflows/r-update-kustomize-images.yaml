@@ -14,6 +14,10 @@ on:
         type: boolean
         required: false
         default: true
+      pr_labels:
+        description: 'Labels to add to the pull request (comma separated)'
+        type: string
+        required: false
       #Must be specified if create_pr=true
       #Teams/collaborators listed here must have at least read access to the repository
       pull_request_reviewers:
@@ -99,15 +103,27 @@ jobs:
           git push origin "${{ inputs.branch }}"
       - name: kustomize build
         run: kustomize build ${{ inputs.overlay }}
+      - name: Get images from overlay ${{ inputs.overlay }}
+        uses: mikefarah/yq@v4.26.1
+        id: images
+        with:
+          cmd: yq 'with_entries(select(.key | test("^images$")))' ${{ inputs.overlay }}/kustomization.yaml
       - name: Maybe create pull-request
         if: inputs.create_pr && inputs.branch != inputs.base
         env:
           GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
         run: |
-          images=$(echo '${{ inputs.images }}' | jq .)
-          echo -e "*Automated PR*\n\nUpdates ${{ inputs.overlay }} with newTag from images\n\`\`\`json\n$images\n\`\`\`\n" > /tmp/body
-          gh pr create --title '[CI] Promote images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
-              --label "automated" --label "infra" --reviewer "${{ inputs.pull_request_reviewers }}" \
+          cat <<EOF > /tmp/body
+          **Automated PR**
+
+          **Updates \`images\` in ${{inputs.overlay}}/kustomization.yaml**
+
+          ~~~yaml
+          ${{ steps.images.outputs.result }}
+          ~~~
+          EOF
+          gh pr create --title '[CI] Update images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
+              --label "automated" --label "infra" --label "${{ inputs.pr_labels }}" --reviewer "${{ inputs.pull_request_reviewers }}" \
               --base "${{ inputs.base }}" || gh pr edit --body-file="/tmp/body"
   promote-images:
     name: Push image from src to dst
