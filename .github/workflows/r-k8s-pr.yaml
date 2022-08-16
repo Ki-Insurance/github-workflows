@@ -39,15 +39,6 @@ on:
       gh_linter_github_token:
         description: 'Override GITHUB_TOKEN used for super linter'
         required: false
-      gcp_workload_identity_provider:
-        description: 'Workload identity provider used to authenticate to GCP; EG projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
-        required: false
-      gcp_service_account:
-        description: 'Service account used to authenticate to GCP; required if gcp_workload_identity_provider is set'
-        required: false
-      gcp_credentials_json:
-        description: 'Service account JSON key used to authenticate to GCP (Recommended to use workload identity instead)'
-        required: false
 
 jobs:
   lint:
@@ -83,6 +74,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.overlays.outputs.matrix)}}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
     steps:
       - uses: actions/checkout@v2
       - name: Get all dependent resources
@@ -103,14 +97,6 @@ jobs:
       - name: Setup yq
         if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: mikefarah/yq@v4.25.3
-      - name: Authenticate to Google Cloud
-        id: gcp-auth
-        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
-        uses: 'google-github-actions/auth@v0'
-        with:
-          workload_identity_provider: ${{ secrets.gcp_workload_identity_provider || null }}
-          service_account: ${{ secrets.gcp_service_account || null }}
-          credentials_json: ${{ secrets.gcp_credentials_json || null }}
       - name: Parse gke config
         id: gke
         if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
@@ -118,6 +104,15 @@ jobs:
           echo "::set-output name=cluster_name::$(yq .cluster_name ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
           echo "::set-output name=location::$(yq .location ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
           echo "::set-output name=project_id::$(yq .project_id ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
+          echo "::set-output name=workload_identity_provider::$(yq .workload_identity_provider ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
+          echo "::set-output name=service_account::$(yq .service_account ${{ matrix.overlay }}/${{ inputs.gke_config_yaml_file }})"
+      - name: Authenticate to Google Cloud
+        id: gcp-auth
+        if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: ${{ steps.gke.outputs.workload_identity_provider }}
+          service_account: ${{ steps.gke.outputs.service_account }}
       - name: Setup kubectl
         if: ${{ inputs.enable_flux_diff && steps.changed-files.outputs.any_changed == 'true' }}
         uses: 'google-github-actions/get-gke-credentials@v0'
