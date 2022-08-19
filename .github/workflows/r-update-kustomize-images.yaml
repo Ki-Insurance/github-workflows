@@ -147,7 +147,7 @@ jobs:
         if: inputs.automerge_pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge --auto
+        run: gh pr merge --auto --merge
   promote-images:
     name: Push image from src to dst
     runs-on: ubuntu-latest
