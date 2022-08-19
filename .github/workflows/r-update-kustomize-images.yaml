@@ -146,7 +146,7 @@ jobs:
       - name: Maybe merge pull request
         if: inputs.automerge_pr
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
         run: gh pr merge --auto --merge
   promote-images:
     name: Push image from src to dst
