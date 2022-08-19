@@ -119,6 +119,7 @@ jobs:
         with:
           cmd: yq 'with_entries(select(.key | test("^images$")))' ${{ inputs.overlay }}/kustomization.yaml
       - name: Maybe create pull-request
+        id: create-pr
         if: inputs.create_pr && inputs.branch != inputs.base
         env:
           GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
