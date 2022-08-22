@@ -14,6 +14,16 @@ on:
         type: boolean
         required: false
         default: true
+      automerge_pr:
+        description: 'Merge pull request automatically when requirements are satisfied?'
+        type: boolean
+        required: false
+        default: false
+      autoapprove_pr:
+        description: 'Should the github actions bot user automatically approve PR?'
+        type: boolean
+        required: false
+        default: false
       pr_labels:
         description: 'Labels to add to the pull request (comma separated)'
         type: string
@@ -109,6 +119,7 @@ jobs:
         with:
           cmd: yq 'with_entries(select(.key | test("^images$")))' ${{ inputs.overlay }}/kustomization.yaml
       - name: Maybe create pull-request
+        id: create-pr
         if: inputs.create_pr && inputs.branch != inputs.base
         env:
           GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
@@ -125,6 +136,18 @@ jobs:
           gh pr create --title '[CI] Update images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
               --label "automated" --label "infra" --label "${{ inputs.pr_labels }}" --reviewer "${{ inputs.pull_request_reviewers }}" \
               --base "${{ inputs.base }}" || gh pr edit --body-file="/tmp/body"
+          echo "::set-output name=pr-number::$(gh pr view --json number | jq -r '.number')"
+      - name: Maybe auto approve PR
+        uses: hmarr/auto-approve-action@v2
+        if: inputs.autoapprove_pr
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ steps.create-pr.outputs.pr-number }}
+      - name: Maybe merge pull request
+        if: inputs.automerge_pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.override_github_token || secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --merge
   promote-images:
     name: Push image from src to dst
     runs-on: ubuntu-latest
