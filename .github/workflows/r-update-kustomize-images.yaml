@@ -138,7 +138,6 @@ jobs:
           labels='${{ inputs.pr_labels }}'
           for i in ${labels//,/ }
           do
-              # call your procedure/other scripts here below
               gh label create "$i" -R ${{ github.event.repository.name }} || true
           done
           gh pr create --title '[CI] Update images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
