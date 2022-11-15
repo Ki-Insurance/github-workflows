@@ -135,6 +135,12 @@ jobs:
           EOF
           gh label create automated -R ${{ github.event.repository.name }} || true
           gh label create infra -R ${{ github.event.repository.name }} || true
+          labels='${{ inputs.pr_labels }}'
+          for i in ${labels//,/ }
+          do
+              # call your procedure/other scripts here below
+              gh label create "$i" -R ${{ github.event.repository.name }} || true
+          done
           gh pr create --title '[CI] Update images in ${{ inputs.overlay }}' --body-file "/tmp/body" \
               --label "automated" --label "infra" --label "${{ inputs.pr_labels }}" --reviewer "${{ inputs.pull_request_reviewers }}" \
               --base "${{ inputs.base }}" || gh pr edit --body-file="/tmp/body"
